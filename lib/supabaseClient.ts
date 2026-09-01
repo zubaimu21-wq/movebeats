@@ -26,3 +26,11 @@ export type UserAudioRow = {
   uploaded_at: string;
   expires_at: string;
 };
+
+export type ProfileRow = {
+  id: string;
+  display_name: string | null;
+  email: string | null;
+  is_admin: boolean;
+  created_at: string;
+};

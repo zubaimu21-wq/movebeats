@@ -3,9 +3,12 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   ArrowLeft,
+  Crown,
+  KeyRound,
   LockKeyhole,
   LogOut,
   Music2,
+  Pencil,
   ShieldCheck,
   Trash2,
   Upload,
@@ -18,6 +21,7 @@ import {
   USER_AUDIO_BUCKET,
   USER_AUDIO_RETENTION_DAYS,
   supabase,
+  type ProfileRow,
   type UserAudioRow,
 } from "../../lib/supabaseClient";
 
@@ -30,9 +34,15 @@ function daysLeft(expiresAt: string) {
   return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
 
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 export default function AccountPage() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
@@ -41,6 +51,14 @@ export default function AccountPage() {
   const [uploads, setUploads] = useState<UserAudioRow[]>([]);
   const [uploadBusy, setUploadBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameBusy, setNameBusy] = useState(false);
+
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
@@ -52,11 +70,20 @@ export default function AccountPage() {
     if (session === undefined) return;
     if (!session) {
       setUploads([]);
+      setProfile(null);
       return;
     }
     refreshUploads();
+    refreshProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  async function refreshProfile() {
+    const { data, error: fetchError } = await supabase.from("profiles").select("*").single();
+    if (fetchError) return;
+    setProfile(data as ProfileRow);
+    setNameDraft((data as ProfileRow)?.display_name ?? "");
+  }
 
   async function refreshUploads() {
     const { data, error: fetchError } = await supabase
@@ -84,8 +111,16 @@ export default function AccountPage() {
     e.preventDefault();
     setError(null);
     setMessage(null);
+    if (!name.trim()) {
+      setError("Please enter your name.");
+      return;
+    }
     setAuthBusy(true);
-    const { error: signUpError } = await supabase.auth.signUp({ email, password });
+    const { error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: name.trim() } },
+    });
     setAuthBusy(false);
     if (signUpError) {
       setError(signUpError.message);
@@ -97,6 +132,43 @@ export default function AccountPage() {
 
   async function signOut() {
     await supabase.auth.signOut();
+  }
+
+  async function saveName() {
+    if (!session || !nameDraft.trim()) return;
+    setNameBusy(true);
+    setError(null);
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ display_name: nameDraft.trim() })
+      .eq("id", session.user.id);
+    setNameBusy(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setEditingName(false);
+    await refreshProfile();
+  }
+
+  async function changePassword(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setMessage(null);
+    if (newPassword.length < 6) {
+      setError("New password must be at least 6 characters.");
+      return;
+    }
+    setPasswordBusy(true);
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    setPasswordBusy(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setNewPassword("");
+    setShowPasswordForm(false);
+    setMessage("Password updated.");
   }
 
   async function onPickFile(e: ChangeEvent<HTMLInputElement>) {
@@ -198,11 +270,43 @@ export default function AccountPage() {
             <h1>Welcome back</h1>
             <div className="account-user">
               <UserRound size={20} />
-              <span>
-                <b>{session.user.email}</b>
-                <small>Signed in</small>
+              <span className="account-user-info">
+                {editingName ? (
+                  <span className="account-name-edit">
+                    <input
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      maxLength={60}
+                      placeholder="Your name"
+                    />
+                    <button type="button" disabled={nameBusy} onClick={saveName}>
+                      Save
+                    </button>
+                  </span>
+                ) : (
+                  <b>
+                    {profile?.display_name || session.user.email}
+                    {profile?.is_admin && (
+                      <span className="account-admin-badge">
+                        <Crown size={11} /> Admin
+                      </span>
+                    )}
+                    <button type="button" className="account-name-pencil" onClick={() => setEditingName(true)} title="Edit name">
+                      <Pencil size={12} />
+                    </button>
+                  </b>
+                )}
+                <small>
+                  {session.user.email} · joined {profile ? formatDate(profile.created_at) : "…"}
+                </small>
               </span>
             </div>
+
+            {profile?.is_admin && (
+              <a className="account-admin-link" href="/admin">
+                <Crown size={15} /> Open Admin Dashboard
+              </a>
+            )}
 
             <div className="account-uploads">
               <div className="account-uploads-head">
@@ -246,6 +350,29 @@ export default function AccountPage() {
               )}
             </div>
 
+            {!showPasswordForm ? (
+              <button className="account-secondary" onClick={() => setShowPasswordForm(true)}>
+                <KeyRound size={16} /> Change password
+              </button>
+            ) : (
+              <form className="account-form" onSubmit={changePassword}>
+                <label>
+                  New password
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                  />
+                </label>
+                <button className="account-primary" type="submit" disabled={passwordBusy}>
+                  <KeyRound size={16} /> {passwordBusy ? "Saving…" : "Update password"}
+                </button>
+              </form>
+            )}
+
             {error && <p className="account-error">{error}</p>}
             {message && <p className="account-message">{message}</p>}
 
@@ -263,6 +390,19 @@ export default function AccountPage() {
             <p>Sign in to save your own audio tracks to your account.</p>
 
             <form className="account-form" onSubmit={mode === "signin" ? signIn : signUp}>
+              {mode === "signup" && (
+                <label>
+                  Name
+                  <input
+                    type="text"
+                    required
+                    maxLength={60}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Your name"
+                  />
+                </label>
+              )}
               <label>
                 Email
                 <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
