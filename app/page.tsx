@@ -5,6 +5,7 @@ import {
   Bike,
   Bot,
   Box,
+  Crown,
   Dumbbell,
   Download,
   Expand,
@@ -12,6 +13,7 @@ import {
   Gamepad2,
   ImagePlus,
   LogIn,
+  LogOut,
   Mic2,
   Moon,
   Music2,
@@ -26,12 +28,22 @@ import {
   Trash2,
   Upload,
   UserPlus,
+  UserRound,
   Users,
   Volume2,
   VolumeX,
   Zap,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import type { Session } from "@supabase/supabase-js";
+import {
+  MAX_USER_AUDIO_BYTES,
+  MAX_USER_AUDIO_FILES,
+  USER_AUDIO_BUCKET,
+  supabase,
+  type ProfileRow,
+  type UserAudioRow,
+} from "../lib/supabaseClient";
 
 type Status = "ready" | "counting" | "running" | "paused" | "finished";
 type Mode = "game" | "workout" | "hiit" | "boxing" | "custom";
@@ -354,6 +366,103 @@ export default function Home() {
     { id: "team-a", name: "Team A", image: null, members: [""] },
     { id: "team-b", name: "Team B", image: null, members: [""] },
   ]);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [myUploads, setMyUploads] = useState<UserAudioRow[]>([]);
+  const [myUploadBusy, setMyUploadBusy] = useState(false);
+  const [myUploadError, setMyUploadError] = useState<string | null>(null);
+  const myUploadRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (session === undefined) return;
+    if (!session) {
+      setProfile(null);
+      setMyUploads([]);
+      return;
+    }
+    supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", session.user.id)
+      .single()
+      .then(({ data }) => setProfile((data as ProfileRow) ?? null));
+    refreshMyUploads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  async function refreshMyUploads() {
+    const { data, error: fetchError } = await supabase
+      .from("user_audio")
+      .select("*")
+      .order("uploaded_at", { ascending: false });
+    if (fetchError) return;
+    setMyUploads((data as UserAudioRow[]) ?? []);
+  }
+
+  const onMyUpload = async (file?: File) => {
+    if (!file || !session) return;
+    setMyUploadError(null);
+    if (!file.type.startsWith("audio/")) {
+      setMyUploadError("Only audio files can be uploaded.");
+      return;
+    }
+    if (file.size > MAX_USER_AUDIO_BYTES) {
+      setMyUploadError(
+        `That file is ${(file.size / (1024 * 1024)).toFixed(1)}MB — the limit is ${(MAX_USER_AUDIO_BYTES / (1024 * 1024)).toFixed(0)}MB per file.`,
+      );
+      return;
+    }
+    if (myUploads.length >= MAX_USER_AUDIO_FILES) {
+      setMyUploadError(`You already have ${MAX_USER_AUDIO_FILES} saved tracks — delete one first to upload another.`);
+      return;
+    }
+    setMyUploadBusy(true);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120);
+    const storagePath = `${session.user.id}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage
+      .from(USER_AUDIO_BUCKET)
+      .upload(storagePath, file, { contentType: file.type, upsert: false });
+    if (uploadError) {
+      setMyUploadBusy(false);
+      setMyUploadError(uploadError.message);
+      return;
+    }
+    const { error: insertError } = await supabase.from("user_audio").insert({
+      owner_id: session.user.id,
+      storage_path: storagePath,
+      file_name: file.name,
+      size_bytes: file.size,
+    });
+    setMyUploadBusy(false);
+    if (insertError) {
+      await supabase.storage.from(USER_AUDIO_BUCKET).remove([storagePath]);
+      setMyUploadError(insertError.message.includes("Upload limit") ? insertError.message : `Could not save: ${insertError.message}`);
+      return;
+    }
+    await refreshMyUploads();
+  };
+
+  const deleteMyUpload = async (row: UserAudioRow) => {
+    setMyUploadError(null);
+    await supabase.storage.from(USER_AUDIO_BUCKET).remove([row.storage_path]);
+    const { error: deleteError } = await supabase.from("user_audio").delete().eq("id", row.id);
+    if (deleteError) {
+      setMyUploadError(deleteError.message);
+      return;
+    }
+    if (trackId === `upload:${row.id}`) setTrackId("energy");
+    setMyUploads((prev) => prev.filter((u) => u.id !== row.id));
+  };
+
+  const signOutOfAccount = async () => {
+    await supabase.auth.signOut();
+  };
   const audioRef = useRef<HTMLAudioElement | null>(null),
     previewAudioRef = useRef<HTMLAudioElement | null>(null),
     uploadRef = useRef<HTMLInputElement | null>(null),
@@ -397,7 +506,16 @@ export default function Home() {
           ),
     displayRemaining = status === "finished" ? 0 : phaseRemaining,
     currentRound = roundIndex + 1;
-  const allTracks = customTrack ? [customTrack, ...tracks] : tracks,
+  const myUploadTracks: Track[] = myUploads.map((u) => ({
+      id: `upload:${u.id}`,
+      name: u.file_name.replace(/\.[^.]+$/, "") || "My Upload",
+      style: "My Uploads • Saved to account",
+      emoji: "🎵",
+      color: "#34d399",
+      src: supabase.storage.from(USER_AUDIO_BUCKET).getPublicUrl(u.storage_path).data.publicUrl,
+      base: 100,
+    })),
+    allTracks = [...myUploadTracks, ...(customTrack ? [customTrack] : []), ...tracks],
     track = allTracks.find((t) => t.id === trackId) ?? tracks[0],
     hypeChoice = hypeOptions.find((h) => h.id === hypeId) ?? hypeOptions[1],
     activity = activities.find((a) => a.id === activityId) ?? activities[0],
@@ -1061,10 +1179,22 @@ export default function Home() {
             </div>
           </div>
           <div className="header-actions">
-            <a className="login-link" href="/account">
-              <LogIn size={16} />
-              <em>Login</em>
-            </a>
+            {session ? (
+              <>
+                <a className="login-link" href="/account" title="Account & uploads">
+                  {profile?.is_admin ? <Crown size={16} /> : <UserRound size={16} />}
+                  <em>{profile?.display_name || "Account"}</em>
+                </a>
+                <button onClick={signOutOfAccount} aria-label="Sign out" title="Sign out">
+                  <LogOut size={16} />
+                </button>
+              </>
+            ) : (
+              <a className="login-link" href="/account">
+                <LogIn size={16} />
+                <em>Login</em>
+              </a>
+            )}
             <button onClick={install}>
               <Download size={16} /> <em>Install App</em>
             </button>
@@ -1715,11 +1845,46 @@ export default function Home() {
                 <small>Browse audio from your phone</small>
               </span>
             </button>
+            <div className="my-uploads-box">
+              {!session ? (
+                <a className="my-uploads-login" href="/account">
+                  <UserRound size={14} /> Login to save your own music permanently
+                </a>
+              ) : (
+                <>
+                  <div className="my-uploads-head">
+                    <span>
+                      <Music2 size={13} /> My Uploads ({myUploads.length}/{MAX_USER_AUDIO_FILES})
+                    </span>
+                    <label
+                      className={`my-uploads-btn${myUploadBusy || myUploads.length >= MAX_USER_AUDIO_FILES ? " disabled" : ""}`}
+                    >
+                      <Upload size={12} />
+                      {myUploadBusy ? "Uploading…" : "Upload"}
+                      <input
+                        ref={myUploadRef}
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => {
+                          onMyUpload(e.target.files?.[0]);
+                          e.currentTarget.value = "";
+                        }}
+                        disabled={myUploadBusy || myUploads.length >= MAX_USER_AUDIO_FILES}
+                      />
+                    </label>
+                  </div>
+                  <p className="my-uploads-note">
+                    Saved to your account for 25 days · up to {MAX_USER_AUDIO_FILES} files, {(MAX_USER_AUDIO_BYTES / (1024 * 1024)).toFixed(0)}MB each.
+                  </p>
+                  {myUploadError && <p className="my-uploads-error">{myUploadError}</p>}
+                </>
+              )}
+            </div>
             <div className="track-list">
               {allTracks.map((t, index) => (
                 <div
                   key={t.id}
-                  className={`track-row ${trackId === t.id ? "selected" : ""}`}
+                  className={`track-row ${trackId === t.id ? "selected" : ""} ${t.id.startsWith("upload:") ? "has-delete" : ""}`}
                   style={{ "--item": t.color } as React.CSSProperties}
                 >
                   <button
@@ -1754,6 +1919,18 @@ export default function Home() {
                       <Play size={15} fill="currentColor" />
                     )}
                   </button>
+                  {t.id.startsWith("upload:") && (
+                    <button
+                      className="track-delete"
+                      onClick={() => {
+                        const row = myUploads.find((u) => `upload:${u.id}` === t.id);
+                        if (row) deleteMyUpload(row);
+                      }}
+                      title="Delete this upload"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

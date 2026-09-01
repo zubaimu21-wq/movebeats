@@ -104,7 +104,11 @@ export default function AccountPage() {
     setAuthBusy(true);
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
     setAuthBusy(false);
-    if (signInError) setError(signInError.message);
+    if (signInError) {
+      setError(signInError.message);
+      return;
+    }
+    window.location.href = "/";
   }
 
   async function signUp(e: FormEvent) {
@@ -116,7 +120,7 @@ export default function AccountPage() {
       return;
     }
     setAuthBusy(true);
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { error: signUpError, data: signUpData } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { display_name: name.trim() } },
@@ -124,6 +128,10 @@ export default function AccountPage() {
     setAuthBusy(false);
     if (signUpError) {
       setError(signUpError.message);
+      return;
+    }
+    if (signUpData.session) {
+      window.location.href = "/";
       return;
     }
     setMessage("Account created. Check your email if confirmation is required, then sign in.");
