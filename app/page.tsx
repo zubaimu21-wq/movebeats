@@ -261,7 +261,6 @@ const clamp = (v: number, min: number, max: number) =>
 const modes: [Mode, string, string, React.ReactNode][] = [
   ["game", "Games", "Music challenge", <Gamepad2 key="game" />],
   ["workout", "Workout", "45s / 15s", <Dumbbell key="workout" />],
-  ["hiit", "HIIT", "40s / 20s", <Flame key="hiit" />],
 ];
 const activities = [
   { id: "general", name: "General Workout", met: 6 },
