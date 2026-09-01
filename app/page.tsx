@@ -2,6 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
+  ArrowLeft,
+  Bell,
+  BellOff,
+  BellRing,
   Bike,
   Bot,
   Box,
@@ -31,6 +35,7 @@ import {
   UserPlus,
   UserRound,
   Users,
+  Vibrate,
   Volume2,
   VolumeX,
   Wifi,
@@ -407,19 +412,47 @@ export default function Home() {
 
   const todayKey = () => new Date().toISOString().slice(0, 10);
   const [stepsOpen, setStepsOpen] = useState(false);
+  const [stepsSettingsOpen, setStepsSettingsOpen] = useState(false);
   const [stepCount, setStepCount] = useState(0);
   const [stepTracking, setStepTracking] = useState(false);
   const [stepSupport, setStepSupport] = useState<"unknown" | "supported" | "unsupported" | "denied">("unknown");
   const [stepManualInput, setStepManualInput] = useState("");
   const [isOnline, setIsOnline] = useState(true);
+  const [stepAutoDetect, setStepAutoDetect] = useState(true);
+  const [stepVibrate, setStepVibrate] = useState(true);
+  const [sedentaryEnabled, setSedentaryEnabled] = useState(true);
+  const [sedentaryMinutes, setSedentaryMinutes] = useState(45);
+  const [notifyPermission, setNotifyPermission] = useState<"default" | "granted" | "denied" | "unsupported">(
+    "default",
+  );
+  const [needsMotionTap, setNeedsMotionTap] = useState(false);
+  const [walkToast, setWalkToast] = useState(false);
+  const [sedentaryToast, setSedentaryToast] = useState(false);
   const stepMagHistoryRef = useRef<number[]>([]);
   const stepLastTimeRef = useRef(0);
+  const lastStepAtRef = useRef(Date.now());
+  const lastReminderAtRef = useRef(0);
+  const wasWalkingRef = useRef(false);
+  const walkIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     try {
       const saved = Number(localStorage.getItem(`movebeat_steps_${todayKey()}`) || "0");
       if (!Number.isNaN(saved)) setStepCount(saved);
+      const settingsRaw = localStorage.getItem("movebeat_step_settings");
+      if (settingsRaw) {
+        const s = JSON.parse(settingsRaw);
+        if (typeof s.autoDetect === "boolean") setStepAutoDetect(s.autoDetect);
+        if (typeof s.vibrate === "boolean") setStepVibrate(s.vibrate);
+        if (typeof s.sedentaryEnabled === "boolean") setSedentaryEnabled(s.sedentaryEnabled);
+        if (typeof s.sedentaryMinutes === "number") setSedentaryMinutes(s.sedentaryMinutes);
+      }
     } catch {}
+    if (typeof Notification !== "undefined") {
+      setNotifyPermission(Notification.permission as "default" | "granted" | "denied");
+    } else {
+      setNotifyPermission("unsupported");
+    }
     setIsOnline(typeof navigator !== "undefined" ? navigator.onLine : true);
     const goOnline = () => setIsOnline(true);
     const goOffline = () => setIsOnline(false);
@@ -437,25 +470,100 @@ export default function Home() {
     } catch {}
   }, [stepCount]);
 
-  const handleStepMotion = useCallback((event: DeviceMotionEvent) => {
-    const acc = event.accelerationIncludingGravity || event.acceleration;
-    if (!acc || acc.x == null || acc.y == null || acc.z == null) return;
-    const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-    const hist = stepMagHistoryRef.current;
-    hist.push(magnitude);
-    if (hist.length > 20) hist.shift();
-    const avg = hist.reduce((a, b) => a + b, 0) / hist.length;
-    const threshold = avg + 1.15;
-    const now = Date.now();
-    if (magnitude > threshold && now - stepLastTimeRef.current > 300) {
-      stepLastTimeRef.current = now;
-      setStepCount((c) => c + 1);
-    }
-  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "movebeat_step_settings",
+        JSON.stringify({ autoDetect: stepAutoDetect, vibrate: stepVibrate, sedentaryEnabled, sedentaryMinutes }),
+      );
+    } catch {}
+  }, [stepAutoDetect, stepVibrate, sedentaryEnabled, sedentaryMinutes]);
+
+  const handleStepMotion = useCallback(
+    (event: DeviceMotionEvent) => {
+      const acc = event.accelerationIncludingGravity || event.acceleration;
+      if (!acc || acc.x == null || acc.y == null || acc.z == null) return;
+      const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+      const hist = stepMagHistoryRef.current;
+      hist.push(magnitude);
+      if (hist.length > 20) hist.shift();
+      const avg = hist.reduce((a, b) => a + b, 0) / hist.length;
+      const threshold = avg + 1.15;
+      const now = Date.now();
+      if (magnitude > threshold && now - stepLastTimeRef.current > 300) {
+        stepLastTimeRef.current = now;
+        lastStepAtRef.current = now;
+        setStepCount((c) => c + 1);
+
+        if (!wasWalkingRef.current) {
+          wasWalkingRef.current = true;
+          if (stepVibrate && typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(80);
+          setWalkToast(true);
+          setTimeout(() => setWalkToast(false), 4000);
+        }
+        if (walkIdleTimeoutRef.current) clearTimeout(walkIdleTimeoutRef.current);
+        walkIdleTimeoutRef.current = setTimeout(() => {
+          wasWalkingRef.current = false;
+        }, 8000);
+      }
+    },
+    [stepVibrate],
+  );
+
+  const attachMotionListener = useCallback(() => {
+    stepMagHistoryRef.current = [];
+    window.addEventListener("devicemotion", handleStepMotion);
+    setStepSupport("supported");
+    setStepTracking(true);
+    setNeedsMotionTap(false);
+  }, [handleStepMotion]);
 
   useEffect(() => {
     return () => window.removeEventListener("devicemotion", handleStepMotion);
   }, [handleStepMotion]);
+
+  // Try to auto-enable walk detection as soon as the app loads (no need to open the panel).
+  useEffect(() => {
+    if (!stepAutoDetect) return;
+    if (typeof window === "undefined" || !("DeviceMotionEvent" in window)) {
+      setStepSupport("unsupported");
+      return;
+    }
+    const DME = DeviceMotionEvent as unknown as { requestPermission?: () => Promise<"granted" | "denied"> };
+    if (typeof DME.requestPermission === "function") {
+      // iOS requires a real tap before sensor access can be granted.
+      setNeedsMotionTap(true);
+      return;
+    }
+    attachMotionListener();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepAutoDetect]);
+
+  // Sedentary reminder: checks every minute whether too long has passed since the last detected step.
+  useEffect(() => {
+    if (!sedentaryEnabled) return;
+    const id = setInterval(() => {
+      const idleMs = Date.now() - lastStepAtRef.current;
+      const thresholdMs = sedentaryMinutes * 60000;
+      if (idleMs >= thresholdMs && Date.now() - lastReminderAtRef.current > thresholdMs) {
+        lastReminderAtRef.current = Date.now();
+        if (stepVibrate && typeof navigator !== "undefined" && navigator.vibrate) {
+          navigator.vibrate([200, 100, 200, 100, 200]);
+        }
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          try {
+            new Notification("Time to move! 🚶", {
+              body: "Aap kaafi dair se baithe hain — thoda chal kar aayein.",
+            });
+          } catch {}
+        } else {
+          setSedentaryToast(true);
+          setTimeout(() => setSedentaryToast(false), 9000);
+        }
+      }
+    }, 60000);
+    return () => clearInterval(id);
+  }, [sedentaryEnabled, sedentaryMinutes, stepVibrate]);
 
   const startStepTracking = async () => {
     if (typeof window === "undefined" || !("DeviceMotionEvent" in window)) {
@@ -477,15 +585,13 @@ export default function Home() {
         return;
       }
     }
-    stepMagHistoryRef.current = [];
-    window.addEventListener("devicemotion", handleStepMotion);
-    setStepSupport("supported");
-    setStepTracking(true);
+    attachMotionListener();
   };
 
   const stopStepTracking = () => {
     window.removeEventListener("devicemotion", handleStepMotion);
     setStepTracking(false);
+    setStepAutoDetect(false);
   };
 
   const resetSteps = () => setStepCount(0);
@@ -494,6 +600,15 @@ export default function Home() {
     const n = clamp(parseInt(stepManualInput || "0", 10) || 0, 0, 200000);
     setStepCount(n);
     setStepManualInput("");
+  };
+
+  const enableStepNotifications = async () => {
+    if (typeof Notification === "undefined") {
+      setNotifyPermission("unsupported");
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    setNotifyPermission(perm as "default" | "granted" | "denied");
   };
 
   const stepDistanceKm = (stepCount * 0.762) / 1000;
@@ -1202,77 +1317,210 @@ export default function Home() {
           <b>{remaining}</b>
         </div>
       ) : null}
+      {walkToast ? (
+        <div className="walk-toast">
+          <Footprints size={16} /> Walking detected — counting steps
+        </div>
+      ) : null}
+      {sedentaryToast ? (
+        <div className="sedentary-toast">
+          <BellRing size={16} />
+          <span>
+            <b>Time to move!</b>
+            <small>Aap kaafi dair se baithe hain — thoda chal kar aayein.</small>
+          </span>
+          <button onClick={() => setSedentaryToast(false)} aria-label="Dismiss">
+            <X size={13} />
+          </button>
+        </div>
+      ) : null}
       {stepsOpen ? (
-        <div className="steps-overlay" onClick={() => setStepsOpen(false)}>
+        <div
+          className="steps-overlay"
+          onClick={() => {
+            setStepsOpen(false);
+            setStepsSettingsOpen(false);
+          }}
+        >
           <div className="steps-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="steps-modal-head">
-              <span>
-                <Footprints size={18} /> Step Counter
-              </span>
-              <button className="steps-close" onClick={() => setStepsOpen(false)} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <div className={`steps-net-note ${isOnline ? "online" : "offline"}`}>
-              {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
-              {isOnline ? "Online" : "Offline"} — steps keep counting either way, saved on this device
-            </div>
-            <div className="steps-count-display">
-              <b>{stepCount.toLocaleString()}</b>
-              <small>steps today</small>
-            </div>
-            <div className="steps-stats">
-              <div>
-                <b>{stepDistanceKm.toFixed(2)} km</b>
-                <small>Distance</small>
-              </div>
-              <div>
-                <b>{stepCalories}</b>
-                <small>Calories</small>
-              </div>
-            </div>
-            {stepSupport === "unsupported" ? (
-              <p className="steps-warning">
-                Is device/browser mein motion sensor available nahi hai. Neeche se steps manually add kar sakte hain.
-              </p>
-            ) : stepSupport === "denied" ? (
-              <p className="steps-warning">
-                Motion sensor ki permission nahi mili. Browser settings se allow karke dobara try karein, ya neeche manually steps add karein.
-              </p>
-            ) : null}
-            <div className="steps-actions">
-              {!stepTracking ? (
-                <button className="steps-primary" onClick={startStepTracking}>
-                  <Play size={16} fill="currentColor" /> Start tracking
-                </button>
-              ) : (
-                <button className="steps-primary steps-stop" onClick={stopStepTracking}>
-                  <Pause size={16} fill="currentColor" /> Stop tracking
-                </button>
-              )}
-              <button className="steps-reset" onClick={resetSteps}>
-                <RotateCcw size={15} /> Reset
-              </button>
-            </div>
-            <div className="steps-manual">
-              <span>Log steps manually</span>
-              <div className="steps-manual-row">
-                <input
-                  type="number"
-                  min="0"
-                  max="200000"
-                  placeholder="e.g. 4500"
-                  value={stepManualInput}
-                  onChange={(e) => setStepManualInput(e.target.value)}
-                />
-                <button onClick={applyManualSteps}>Set</button>
-              </div>
-            </div>
-            <p className="steps-hint">
-              Phone ko pocket ya haath mein rakh kar "Start tracking" dabayein — chalte waqt steps automatically count
-              honge. Yeh feature poori tarah is device par chalta hai, isliye internet ke bina (offline) bhi kaam karta
-              hai.
-            </p>
+            {!stepsSettingsOpen ? (
+              <>
+                <div className="steps-modal-head">
+                  <span>
+                    <Footprints size={18} /> Step Counter
+                  </span>
+                  <span className="steps-head-actions">
+                    <button
+                      className="steps-close"
+                      onClick={() => setStepsSettingsOpen(true)}
+                      aria-label="Step counter settings"
+                      title="Settings"
+                    >
+                      <Settings2 size={15} />
+                    </button>
+                    <button className="steps-close" onClick={() => setStepsOpen(false)} aria-label="Close">
+                      <X size={16} />
+                    </button>
+                  </span>
+                </div>
+                <div className={`steps-net-note ${isOnline ? "online" : "offline"}`}>
+                  {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
+                  {isOnline ? "Online" : "Offline"} — steps keep counting either way, saved on this device
+                </div>
+                <div className="steps-count-display">
+                  <b>{stepCount.toLocaleString()}</b>
+                  <small>steps today {stepTracking ? "· auto-tracking on" : ""}</small>
+                </div>
+                <div className="steps-stats">
+                  <div>
+                    <b>{stepDistanceKm.toFixed(2)} km</b>
+                    <small>Distance</small>
+                  </div>
+                  <div>
+                    <b>{stepCalories}</b>
+                    <small>Calories</small>
+                  </div>
+                </div>
+                {needsMotionTap && stepSupport !== "supported" ? (
+                  <div className="steps-tap-banner">
+                    <Footprints size={16} />
+                    <span>
+                      <b>Automatic walk detection off</b>
+                      <small>iPhone ko ek baar motion access allow karna hoga</small>
+                    </span>
+                    <button onClick={startStepTracking}>Enable</button>
+                  </div>
+                ) : null}
+                {stepSupport === "unsupported" ? (
+                  <p className="steps-warning">
+                    Is device/browser mein motion sensor available nahi hai. Neeche se steps manually add kar sakte
+                    hain.
+                  </p>
+                ) : stepSupport === "denied" ? (
+                  <p className="steps-warning">
+                    Motion sensor ki permission nahi mili. Browser settings se allow karke dobara try karein, ya
+                    neeche manually steps add karein.
+                  </p>
+                ) : null}
+                <div className="steps-actions">
+                  {!stepTracking ? (
+                    <button className="steps-primary" onClick={startStepTracking}>
+                      <Play size={16} fill="currentColor" /> Start tracking
+                    </button>
+                  ) : (
+                    <button className="steps-primary steps-stop" onClick={stopStepTracking}>
+                      <Pause size={16} fill="currentColor" /> Stop tracking
+                    </button>
+                  )}
+                  <button className="steps-reset" onClick={resetSteps}>
+                    <RotateCcw size={15} /> Reset
+                  </button>
+                </div>
+                <div className="steps-manual">
+                  <span>Log steps manually</span>
+                  <div className="steps-manual-row">
+                    <input
+                      type="number"
+                      min="0"
+                      max="200000"
+                      placeholder="e.g. 4500"
+                      value={stepManualInput}
+                      onChange={(e) => setStepManualInput(e.target.value)}
+                    />
+                    <button onClick={applyManualSteps}>Set</button>
+                  </div>
+                </div>
+                <p className="steps-hint">
+                  Chalte waqt app khud walk detect karke automatically count shuru kar deta hai (vibration se pata bhi
+                  chal jata hai). Yeh feature poori tarah is device par chalta hai, isliye internet ke bina (offline)
+                  bhi kaam karta hai.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="steps-modal-head">
+                  <span>
+                    <Settings2 size={17} /> Step Counter Settings
+                  </span>
+                  <button className="steps-close" onClick={() => setStepsSettingsOpen(false)} aria-label="Back">
+                    <ArrowLeft size={16} />
+                  </button>
+                </div>
+                <div className="steps-settings-list">
+                  <label className="steps-setting-row">
+                    <span>
+                      <b>Auto-detect walking</b>
+                      <small>App khud khol kar chalna detect kar le, "Start" dabane ki zarurat na ho</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={stepAutoDetect}
+                      onChange={(e) => {
+                        setStepAutoDetect(e.target.checked);
+                        if (!e.target.checked) stopStepTracking();
+                      }}
+                    />
+                  </label>
+                  <label className="steps-setting-row">
+                    <span>
+                      <b>
+                        <Vibrate size={13} /> Vibrate on walk detected
+                      </b>
+                      <small>Jab walking shuru ho ya reminder aaye to phone vibrate ho</small>
+                    </span>
+                    <input type="checkbox" checked={stepVibrate} onChange={(e) => setStepVibrate(e.target.checked)} />
+                  </label>
+                  <label className="steps-setting-row">
+                    <span>
+                      <b>Sedentary reminders</b>
+                      <small>Bohat dair baithe rehne par yaad dilaye ke thoda chal ke aayein</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={sedentaryEnabled}
+                      onChange={(e) => setSedentaryEnabled(e.target.checked)}
+                    />
+                  </label>
+                  {sedentaryEnabled ? (
+                    <div className="steps-setting-row steps-setting-select">
+                      <span>
+                        <b>Remind me after</b>
+                      </span>
+                      <div className="steps sedentary-steps">
+                        {[30, 45, 60, 90].map((m) => (
+                          <button
+                            key={m}
+                            className={sedentaryMinutes === m ? "active" : ""}
+                            onClick={() => setSedentaryMinutes(m)}
+                          >
+                            {m}m
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="steps-notify-row">
+                    {notifyPermission === "granted" ? (
+                      <span className="steps-notify-status granted">
+                        <Bell size={13} /> Notifications enabled
+                      </span>
+                    ) : notifyPermission === "unsupported" ? (
+                      <span className="steps-notify-status">
+                        <BellOff size={13} /> Notifications not supported here
+                      </span>
+                    ) : (
+                      <button className="steps-reset" onClick={enableStepNotifications}>
+                        <Bell size={14} /> Enable browser notifications
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="steps-hint">
+                  Notifications aur vibration sirf tab kaam karte hain jab yeh app khuli/mounted ho (ya installed app
+                  ke background tab ke roop mein) — phone ke bilkul band hone par nahi.
+                </p>
+              </>
+            )}
           </div>
         </div>
       ) : null}
@@ -1305,8 +1553,15 @@ export default function Home() {
                 <em>Login</em>
               </a>
             )}
-            <button onClick={() => setStepsOpen(true)} title="Step Counter">
-              <Footprints size={16} /> <em>{stepCount.toLocaleString()} Steps</em>
+            <button
+              className={`steps-header-btn${stepTracking ? " tracking" : ""}`}
+              onClick={() => setStepsOpen(true)}
+              title="Step Counter"
+            >
+              <span className="steps-header-icon">
+                <Footprints size={20} />
+              </span>
+              <em>{stepCount.toLocaleString()} Steps</em>
             </button>
             <button onClick={install}>
               <Download size={16} /> <em>Install App</em>
