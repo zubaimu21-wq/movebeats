@@ -2083,6 +2083,167 @@ footer {
   font-size: 9px;
   color: #777489;
 }
+.account-form {
+  display: grid;
+  gap: 12px;
+  text-align: left;
+  margin-bottom: 12px;
+}
+.account-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #918da4;
+}
+.account-form input {
+  border: 1px solid #2d2a40;
+  background: #171625;
+  color: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: inherit;
+}
+.account-form button {
+  border: none;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.account-switch {
+  display: block;
+  width: 100%;
+  margin-bottom: 17px;
+  border: none;
+  background: none;
+  color: #ff9c7a;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.account-error {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #3a1420;
+  color: #ff9d9d;
+  font-size: 12px;
+  text-align: left;
+}
+.account-message {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #10321f;
+  color: #7ee6a8;
+  font-size: 12px;
+  text-align: left;
+}
+.account-uploads {
+  margin: 0 0 17px;
+  padding: 14px;
+  text-align: left;
+  border: 1px solid #2d2a40;
+  border-radius: 14px;
+  background: #171625;
+}
+.account-uploads-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+}
+.account-uploads-head > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.account-upload-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #ffe05c, #ff653e);
+  color: #16110c;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.account-upload-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.account-upload-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.account-uploads-note {
+  margin: 9px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #6f6b83;
+}
+.account-uploads-empty {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: #6f6b83;
+}
+.account-uploads-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 9px;
+}
+.account-uploads-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 9px;
+  border-radius: 10px;
+  background: #0f0e1a;
+  border: 1px solid #262338;
+}
+.account-uploads-list audio {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 32px;
+}
+.account-uploads-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.account-uploads-meta b {
+  font-size: 11px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-uploads-meta small {
+  font-size: 9px;
+  color: #777489;
+}
+.account-upload-delete {
+  border: none;
+  background: #2a1620;
+  color: #ff9d9d;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
 @media (max-width: 490px) {
   .account-page {
     padding: 14px;
