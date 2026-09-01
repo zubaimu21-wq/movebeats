@@ -1810,8 +1810,16 @@ export default function Home() {
                         max="250"
                         value={weight}
                         disabled={status === "running" || status === "counting"}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) =>
-                          setWeight(clamp(+e.target.value, 30, 250))
+                          setWeight(
+                            e.target.value === ""
+                              ? 0
+                              : Math.min(250, Math.max(0, Math.round(+e.target.value) || 0)),
+                          )
+                        }
+                        onBlur={(e) =>
+                          setWeight(clamp(Math.round(+e.target.value) || 30, 30, 250))
                         }
                       />
                       <b>KG</b>
@@ -1826,8 +1834,16 @@ export default function Home() {
                         max="900"
                         value={workSeconds}
                         disabled={status === "running" || status === "counting"}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) =>
-                          setWorkSeconds(clamp(+e.target.value, 5, 900))
+                          setWorkSeconds(
+                            e.target.value === ""
+                              ? 0
+                              : Math.min(900, Math.max(0, Math.round(+e.target.value) || 0)),
+                          )
+                        }
+                        onBlur={(e) =>
+                          setWorkSeconds(clamp(Math.round(+e.target.value) || 5, 5, 900))
                         }
                       />
                       <b>SEC</b>
@@ -1842,8 +1858,16 @@ export default function Home() {
                         max="600"
                         value={restSeconds}
                         disabled={status === "running" || status === "counting"}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) =>
-                          setRestSeconds(clamp(+e.target.value, 0, 600))
+                          setRestSeconds(
+                            e.target.value === ""
+                              ? 0
+                              : Math.min(600, Math.max(0, Math.round(+e.target.value) || 0)),
+                          )
+                        }
+                        onBlur={(e) =>
+                          setRestSeconds(clamp(Math.round(+e.target.value) || 0, 0, 600))
                         }
                       />
                       <b>SEC</b>
@@ -1858,8 +1882,16 @@ export default function Home() {
                         max="50"
                         value={rounds}
                         disabled={status === "running" || status === "counting"}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) =>
-                          setRounds(clamp(+e.target.value, 1, 50))
+                          setRounds(
+                            e.target.value === ""
+                              ? 0
+                              : Math.min(50, Math.max(0, Math.round(+e.target.value) || 0)),
+                          )
+                        }
+                        onBlur={(e) =>
+                          setRounds(clamp(Math.round(+e.target.value) || 1, 1, 50))
                         }
                       />
                       <b>RDS</b>
@@ -2021,8 +2053,16 @@ export default function Home() {
                         max="60"
                         value={minutes}
                         disabled={status === "running" || status === "counting"}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) =>
-                          setMinutes(clamp(+e.target.value, 0, 60))
+                          setMinutes(
+                            e.target.value === ""
+                              ? 0
+                              : Math.min(60, Math.max(0, Math.round(+e.target.value) || 0)),
+                          )
+                        }
+                        onBlur={(e) =>
+                          setMinutes(clamp(Math.round(+e.target.value) || 0, 0, 60))
                         }
                       />
                       <small>MIN</small>
@@ -2034,8 +2074,16 @@ export default function Home() {
                         max="59"
                         value={seconds}
                         disabled={status === "running" || status === "counting"}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) =>
-                          setSeconds(clamp(+e.target.value, 0, 59))
+                          setSeconds(
+                            e.target.value === ""
+                              ? 0
+                              : Math.min(59, Math.max(0, Math.round(+e.target.value) || 0)),
+                          )
+                        }
+                        onBlur={(e) =>
+                          setSeconds(clamp(Math.round(+e.target.value) || 0, 0, 59))
                         }
                       />
                       <small>SEC</small>
@@ -2087,8 +2135,16 @@ export default function Home() {
                     max="60"
                     value={startCountdown}
                     disabled={status === "running" || status === "counting"}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) =>
-                      setStartCountdown(clamp(+e.target.value || 0, 0, 60))
+                      setStartCountdown(
+                        e.target.value === ""
+                          ? 0
+                          : Math.min(60, Math.max(0, Math.round(+e.target.value) || 0)),
+                      )
+                    }
+                    onBlur={(e) =>
+                      setStartCountdown(clamp(Math.round(+e.target.value) || 0, 0, 60))
                     }
                   />
                   <small>SEC</small>
@@ -2121,8 +2177,16 @@ export default function Home() {
                     max="60"
                     value={endCountdown}
                     disabled={status === "running" || status === "counting"}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) =>
-                      setEndCountdown(clamp(+e.target.value || 0, 0, 60))
+                      setEndCountdown(
+                        e.target.value === ""
+                          ? 0
+                          : Math.min(60, Math.max(0, Math.round(+e.target.value) || 0)),
+                      )
+                    }
+                    onBlur={(e) =>
+                      setEndCountdown(clamp(Math.round(+e.target.value) || 0, 0, 60))
                     }
                   />
                   <small>SEC</small>
@@ -2193,8 +2257,16 @@ export default function Home() {
                       value={hypeEvery || ""}
                       disabled={status === "running" || status === "counting"}
                       placeholder="e.g. 75"
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) =>
-                        setHypeEvery(clamp(+e.target.value || 0, 0, 600))
+                        setHypeEvery(
+                          e.target.value === ""
+                            ? 0
+                            : Math.min(600, Math.max(0, Math.round(+e.target.value) || 0)),
+                        )
+                      }
+                      onBlur={(e) =>
+                        setHypeEvery(clamp(Math.round(+e.target.value) || 0, 0, 600))
                       }
                     />
                   </label>
