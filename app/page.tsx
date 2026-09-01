@@ -10,6 +10,7 @@ import {
   Download,
   Expand,
   Flame,
+  Footprints,
   Gamepad2,
   ImagePlus,
   LogIn,
@@ -32,6 +33,9 @@ import {
   Users,
   Volume2,
   VolumeX,
+  Wifi,
+  WifiOff,
+  X,
   Zap,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
@@ -400,6 +404,101 @@ export default function Home() {
   const signOutOfAccount = async () => {
     await supabase.auth.signOut();
   };
+
+  const todayKey = () => new Date().toISOString().slice(0, 10);
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const [stepCount, setStepCount] = useState(0);
+  const [stepTracking, setStepTracking] = useState(false);
+  const [stepSupport, setStepSupport] = useState<"unknown" | "supported" | "unsupported" | "denied">("unknown");
+  const [stepManualInput, setStepManualInput] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
+  const stepMagHistoryRef = useRef<number[]>([]);
+  const stepLastTimeRef = useRef(0);
+
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(`movebeat_steps_${todayKey()}`) || "0");
+      if (!Number.isNaN(saved)) setStepCount(saved);
+    } catch {}
+    setIsOnline(typeof navigator !== "undefined" ? navigator.onLine : true);
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`movebeat_steps_${todayKey()}`, String(stepCount));
+    } catch {}
+  }, [stepCount]);
+
+  const handleStepMotion = useCallback((event: DeviceMotionEvent) => {
+    const acc = event.accelerationIncludingGravity || event.acceleration;
+    if (!acc || acc.x == null || acc.y == null || acc.z == null) return;
+    const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+    const hist = stepMagHistoryRef.current;
+    hist.push(magnitude);
+    if (hist.length > 20) hist.shift();
+    const avg = hist.reduce((a, b) => a + b, 0) / hist.length;
+    const threshold = avg + 1.15;
+    const now = Date.now();
+    if (magnitude > threshold && now - stepLastTimeRef.current > 300) {
+      stepLastTimeRef.current = now;
+      setStepCount((c) => c + 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => window.removeEventListener("devicemotion", handleStepMotion);
+  }, [handleStepMotion]);
+
+  const startStepTracking = async () => {
+    if (typeof window === "undefined" || !("DeviceMotionEvent" in window)) {
+      setStepSupport("unsupported");
+      return;
+    }
+    const DME = DeviceMotionEvent as unknown as {
+      requestPermission?: () => Promise<"granted" | "denied">;
+    };
+    if (typeof DME.requestPermission === "function") {
+      try {
+        const result = await DME.requestPermission();
+        if (result !== "granted") {
+          setStepSupport("denied");
+          return;
+        }
+      } catch {
+        setStepSupport("denied");
+        return;
+      }
+    }
+    stepMagHistoryRef.current = [];
+    window.addEventListener("devicemotion", handleStepMotion);
+    setStepSupport("supported");
+    setStepTracking(true);
+  };
+
+  const stopStepTracking = () => {
+    window.removeEventListener("devicemotion", handleStepMotion);
+    setStepTracking(false);
+  };
+
+  const resetSteps = () => setStepCount(0);
+
+  const applyManualSteps = () => {
+    const n = clamp(parseInt(stepManualInput || "0", 10) || 0, 0, 200000);
+    setStepCount(n);
+    setStepManualInput("");
+  };
+
+  const stepDistanceKm = (stepCount * 0.762) / 1000;
+  const stepCalories = Math.round(stepCount * 0.04 * (weight / 70));
+
   const audioRef = useRef<HTMLAudioElement | null>(null),
     previewAudioRef = useRef<HTMLAudioElement | null>(null),
     uploadRef = useRef<HTMLInputElement | null>(null),
@@ -1103,6 +1202,80 @@ export default function Home() {
           <b>{remaining}</b>
         </div>
       ) : null}
+      {stepsOpen ? (
+        <div className="steps-overlay" onClick={() => setStepsOpen(false)}>
+          <div className="steps-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="steps-modal-head">
+              <span>
+                <Footprints size={18} /> Step Counter
+              </span>
+              <button className="steps-close" onClick={() => setStepsOpen(false)} aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <div className={`steps-net-note ${isOnline ? "online" : "offline"}`}>
+              {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
+              {isOnline ? "Online" : "Offline"} — steps keep counting either way, saved on this device
+            </div>
+            <div className="steps-count-display">
+              <b>{stepCount.toLocaleString()}</b>
+              <small>steps today</small>
+            </div>
+            <div className="steps-stats">
+              <div>
+                <b>{stepDistanceKm.toFixed(2)} km</b>
+                <small>Distance</small>
+              </div>
+              <div>
+                <b>{stepCalories}</b>
+                <small>Calories</small>
+              </div>
+            </div>
+            {stepSupport === "unsupported" ? (
+              <p className="steps-warning">
+                Is device/browser mein motion sensor available nahi hai. Neeche se steps manually add kar sakte hain.
+              </p>
+            ) : stepSupport === "denied" ? (
+              <p className="steps-warning">
+                Motion sensor ki permission nahi mili. Browser settings se allow karke dobara try karein, ya neeche manually steps add karein.
+              </p>
+            ) : null}
+            <div className="steps-actions">
+              {!stepTracking ? (
+                <button className="steps-primary" onClick={startStepTracking}>
+                  <Play size={16} fill="currentColor" /> Start tracking
+                </button>
+              ) : (
+                <button className="steps-primary steps-stop" onClick={stopStepTracking}>
+                  <Pause size={16} fill="currentColor" /> Stop tracking
+                </button>
+              )}
+              <button className="steps-reset" onClick={resetSteps}>
+                <RotateCcw size={15} /> Reset
+              </button>
+            </div>
+            <div className="steps-manual">
+              <span>Log steps manually</span>
+              <div className="steps-manual-row">
+                <input
+                  type="number"
+                  min="0"
+                  max="200000"
+                  placeholder="e.g. 4500"
+                  value={stepManualInput}
+                  onChange={(e) => setStepManualInput(e.target.value)}
+                />
+                <button onClick={applyManualSteps}>Set</button>
+              </div>
+            </div>
+            <p className="steps-hint">
+              Phone ko pocket ya haath mein rakh kar "Start tracking" dabayein — chalte waqt steps automatically count
+              honge. Yeh feature poori tarah is device par chalta hai, isliye internet ke bina (offline) bhi kaam karta
+              hai.
+            </p>
+          </div>
+        </div>
+      ) : null}
       <div className="glow" />
       <div className="app-frame">
         <header className="header">
@@ -1132,6 +1305,9 @@ export default function Home() {
                 <em>Login</em>
               </a>
             )}
+            <button onClick={() => setStepsOpen(true)} title="Step Counter">
+              <Footprints size={16} /> <em>{stepCount.toLocaleString()} Steps</em>
+            </button>
             <button onClick={install}>
               <Download size={16} /> <em>Install App</em>
             </button>
