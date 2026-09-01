@@ -1175,7 +1175,7 @@ export default function Home() {
             </span>
             <div>
               MOVE<b>BEAT</b>
-              <small>AI ACTIVITY COACH</small>
+              <small>SMART GAME TIMER</small>
             </div>
           </div>
           <div className="header-actions">
