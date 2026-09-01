@@ -8,7 +8,6 @@ import {
   BellRing,
   Bike,
   Bot,
-  Box,
   Crown,
   Dumbbell,
   Download,
@@ -263,8 +262,6 @@ const modes: [Mode, string, string, React.ReactNode][] = [
   ["game", "Games", "Music challenge", <Gamepad2 key="game" />],
   ["workout", "Workout", "45s / 15s", <Dumbbell key="workout" />],
   ["hiit", "HIIT", "40s / 20s", <Flame key="hiit" />],
-  ["boxing", "Boxing", "3m / 1m", <Box key="boxing" />],
-  ["custom", "Custom", "Build your own", <Settings2 key="custom" />],
 ];
 const activities = [
   { id: "general", name: "General Workout", met: 6 },
@@ -626,7 +623,9 @@ export default function Home() {
     lastMilestoneRef = useRef(0),
     finishingRef = useRef(false),
     whistleContextRef = useRef<AudioContext | null>(null),
-    wakeLockRef = useRef<any>(null);
+    wakeLockRef = useRef<any>(null),
+    lastUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null),
+    speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameTotal = clamp(minutes * 60 + seconds, 5, 3600),
     sessionTotal =
       mode === "game"
@@ -715,23 +714,46 @@ export default function Home() {
   }, []);
   const speak = useCallback(
     (text: string, rate = 0.9, pitch = 1.15, loudness = 100) => {
-      if (muted || !("speechSynthesis" in window)) return;
+      if (muted || typeof window === "undefined" || !("speechSynthesis" in window)) return;
       const synth = window.speechSynthesis;
+      if (speakTimeoutRef.current) clearTimeout(speakTimeoutRef.current);
       synth.cancel();
-      const message = new SpeechSynthesisUtterance(text),
-        voices = synth.getVoices(),
-        female = voices.find((v) =>
-          /samantha|zira|ava|aria|jenny|female|victoria|karen|moira|tessa|google us english/i.test(
-            v.name,
-          ),
-        );
-      if (female) message.voice = female;
-      message.lang = "en-US";
-      message.rate = rate;
-      message.pitch = pitch;
-      message.volume = loudness / 100;
-      synth.resume();
-      synth.speak(message);
+      const fire = () => {
+        const message = new SpeechSynthesisUtterance(text),
+          voices = synth.getVoices(),
+          female = voices.find((v) =>
+            /samantha|zira|ava|aria|jenny|female|victoria|karen|moira|tessa|google us english/i.test(
+              v.name,
+            ),
+          );
+        // Keep a strong reference alive: Android/Chrome can silently garbage-collect an
+        // utterance that isn't referenced anywhere else, dropping it before it ever speaks.
+        lastUtteranceRef.current = message;
+        if (female) message.voice = female;
+        message.lang = "en-US";
+        message.rate = rate;
+        message.pitch = pitch;
+        message.volume = loudness / 100;
+        try {
+          synth.resume();
+          synth.speak(message);
+        } catch {}
+        // Mobile browsers (Android Chrome especially) sometimes leave the speech engine
+        // stuck "paused" after it has sat idle for a while -- exactly what happens through
+        // most of a workout, right before the end countdown needs to speak again. If the
+        // utterance above didn't actually start, give it one more nudge.
+        setTimeout(() => {
+          if (lastUtteranceRef.current === message && !synth.speaking && !synth.pending) {
+            try {
+              synth.resume();
+              synth.speak(message);
+            } catch {}
+          }
+        }, 220);
+      };
+      // Calling speak() in the same tick as cancel() is a known race on Android/Chrome that
+      // can silently swallow the very next utterance -- give the engine a beat to clear first.
+      speakTimeoutRef.current = setTimeout(fire, 40);
     },
     [muted],
   );
@@ -772,7 +794,18 @@ export default function Home() {
   }, [status]);
   useEffect(() => {
     if (status !== "running") return;
-    const id = setInterval(() => setRemaining((v) => Math.max(0, v - 1)), 1000);
+    const id = setInterval(() => {
+      setRemaining((v) => Math.max(0, v - 1));
+      // Keep the speech engine awake: some mobile browsers quietly pause speechSynthesis
+      // after it's been idle for a while, which is exactly what happens through most of a
+      // round right up until the end-countdown needs to speak again. A harmless resume()
+      // every tick prevents that from ever going stale.
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        try {
+          window.speechSynthesis.resume();
+        } catch {}
+      }
+    }, 1000);
     return () => clearInterval(id);
   }, [status]);
   useEffect(() => {
@@ -1543,7 +1576,7 @@ export default function Home() {
                   {profile?.is_admin ? <Crown size={16} /> : <UserRound size={16} />}
                   <em>{profile?.display_name || "Account"}</em>
                 </a>
-                <button onClick={signOutOfAccount} aria-label="Sign out" title="Sign out">
+                <button className="signout-btn" onClick={signOutOfAccount} aria-label="Sign out" title="Sign out">
                   <LogOut size={16} />
                 </button>
               </>
@@ -1563,7 +1596,7 @@ export default function Home() {
               </span>
               <em>{stepCount.toLocaleString()} Steps</em>
             </button>
-            <button onClick={install}>
+            <button className="install-btn" onClick={install}>
               <Download size={16} /> <em>Install App</em>
             </button>
             <button onClick={toggleFullscreen} aria-label="Fullscreen">
@@ -1596,6 +1629,18 @@ export default function Home() {
               </span>
             </button>
           ))}
+          <button
+            className={`steps-mode-btn${stepTracking ? " tracking" : ""}`}
+            onClick={() => setStepsOpen(true)}
+          >
+            <span className="steps-header-icon">
+              <Footprints />
+            </span>
+            <span>
+              <b>Steps</b>
+              <small>{stepCount.toLocaleString()} today</small>
+            </span>
+          </button>
         </nav>
         <div className="workspace">
           <section className="timer-zone">

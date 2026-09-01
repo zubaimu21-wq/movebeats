@@ -287,7 +287,7 @@ input {
 .mode-bar {
   padding: 13px 18px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   border-bottom: 1px solid #29273b;
   background: #0d0d19;
@@ -333,6 +333,25 @@ input {
 .mode-bar button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.steps-mode-btn {
+  border-color: #4a3f1f !important;
+  background: linear-gradient(135deg, #2a2410, #151423) !important;
+}
+.steps-mode-btn b {
+  color: #f6c945 !important;
+}
+.steps-mode-btn .steps-header-icon {
+  color: #f6c945;
+}
+.steps-mode-btn.tracking {
+  border-color: #f6c945 !important;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, #f6c945 25%, transparent),
+    0 0 16px color-mix(in srgb, #f6c945 45%, transparent);
+}
+.steps-mode-btn.tracking .steps-header-icon {
+  animation: stepsPulse 1.4s ease-in-out infinite;
 }
 .workspace {
   display: grid;
@@ -1534,6 +1553,8 @@ input {
 }
 .steps-modal {
   width: min(380px, 100%);
+  max-height: min(640px, 88vh);
+  overflow-y: auto;
   padding: 26px;
   border: 1px solid #302d45;
   border-radius: 26px;
@@ -2098,6 +2119,16 @@ input {
   background: linear-gradient(135deg, #4f46e5, #7c3aed);
   color: #fff;
 }
+.theme-light .steps-mode-btn {
+  border-color: #f0c453 !important;
+  background: linear-gradient(135deg, #fff7e0, #fef3c7) !important;
+}
+.theme-light .steps-mode-btn b {
+  color: #92650a !important;
+}
+.theme-light .steps-mode-btn .steps-header-icon {
+  color: #b4790f;
+}
 .theme-light .hype-options button.active {
   border-color: #6366f1;
   background: #eef2ff;
@@ -2349,7 +2380,7 @@ footer {
   }
   .mode-bar {
     width: 100%;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     overflow: hidden;
     padding: 11px 14px;
   }
@@ -2404,7 +2435,7 @@ footer {
     padding: 0;
     justify-content: center;
   }
-  .header-actions button:nth-of-type(2) {
+  .header-actions .install-btn {
     display: none;
   }
   .login-link {
@@ -2427,7 +2458,7 @@ footer {
     font-size: 13px;
   }
   .mode-bar {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     padding: 9px 10px;
   }
@@ -2443,6 +2474,13 @@ footer {
   }
   .mode-bar b {
     font-size: 11px;
+  }
+  .steps-overlay {
+    padding: 12px;
+  }
+  .steps-modal {
+    padding: 20px 16px;
+    border-radius: 20px;
   }
   .setting-grid {
     grid-template-columns: 1fr;
@@ -2593,7 +2631,7 @@ footer {
 }
 
 @media (max-width: 350px) {
-  .header-actions button:first-of-type {
+  .header-actions .signout-btn {
     display: none;
   }
   .login-link {
