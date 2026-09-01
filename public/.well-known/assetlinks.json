@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "site.chatgpt.zubaimu21.game_tempo_timer.twa",
+      "sha256_cert_fingerprints": [
+        "E5:73:1C:61:68:79:C3:9E:EF:EE:6D:E3:6A:0F:A3:3A:B7:2C:4A:30:3D:E9:42:04:8C:E2:C9:F9:E5:CE:13:B8"
+      ]
+    }
+  }
+]
