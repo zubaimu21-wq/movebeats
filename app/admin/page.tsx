@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Crown, Music2, ShieldAlert, ShieldCheck, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Check, Copy, Crown, Music2, Phone, ShieldAlert, ShieldCheck, Trash2, Users } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { USER_AUDIO_BUCKET, MAX_USER_AUDIO_FILES, supabase, type ProfileRow, type UserAudioRow } from "../../lib/supabaseClient";
 
@@ -25,6 +25,7 @@ export default function AdminPage() {
   const [audioByOwner, setAudioByOwner] = useState<Record<string, UserAudioRow[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
@@ -123,6 +124,15 @@ export default function AdminPage() {
   }
 
   const totalUploads = Object.values(audioByOwner).reduce((sum, rows) => sum + rows.length, 0);
+  const phoneNumbers = users.map((u) => u.phone).filter((p): p is string => !!p);
+
+  async function copyPhoneNumbers() {
+    try {
+      await navigator.clipboard.writeText(phoneNumbers.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  }
 
   return (
     <main className="admin-page">
@@ -156,7 +166,21 @@ export default function AdminPage() {
               <small>Saved audio files</small>
             </div>
           </div>
+          <div className="admin-stat">
+            <Phone size={18} />
+            <div>
+              <b>{phoneNumbers.length}</b>
+              <small>Numbers on file</small>
+            </div>
+          </div>
         </div>
+
+        {phoneNumbers.length > 0 && (
+          <button className="admin-copy-numbers" onClick={copyPhoneNumbers}>
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            {copied ? "Copied!" : `Copy all ${phoneNumbers.length} numbers`}
+          </button>
+        )}
 
         {error && <p className="account-error">{error}</p>}
 
@@ -180,6 +204,9 @@ export default function AdminPage() {
                     </b>
                     <small>
                       {u.email} · joined {formatDate(u.created_at)}
+                    </small>
+                    <small className={u.phone ? "admin-phone" : "admin-phone missing"}>
+                      <Phone size={11} /> {u.phone || "No number on file"}
                     </small>
                   </div>
                   <span className="admin-user-count">

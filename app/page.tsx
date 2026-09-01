@@ -22,6 +22,7 @@ import {
   Moon,
   Music2,
   Pause,
+  Phone,
   Play,
   Plus,
   RotateCcw,
@@ -350,6 +351,10 @@ export default function Home() {
   const onMyUpload = async (file?: File) => {
     if (!file || !session) return;
     setMyUploadError(null);
+    if (!profile?.phone) {
+      setMyUploadError("Please add your WhatsApp/mobile number in your account before uploading.");
+      return;
+    }
     if (!file.type.startsWith("audio/")) {
       setMyUploadError("Only audio files can be uploaded.");
       return;
@@ -2333,6 +2338,10 @@ export default function Home() {
               {!session ? (
                 <a className="my-uploads-login" href="/account">
                   <UserRound size={14} /> Login to save your own music permanently
+                </a>
+              ) : !profile?.phone ? (
+                <a className="my-uploads-login" href="/account">
+                  <Phone size={14} /> Add your WhatsApp/mobile number to enable uploads
                 </a>
               ) : (
                 <>

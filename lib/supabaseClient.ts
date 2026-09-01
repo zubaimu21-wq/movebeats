@@ -31,6 +31,7 @@ export type ProfileRow = {
   id: string;
   display_name: string | null;
   email: string | null;
+  phone: string | null;
   is_admin: boolean;
   created_at: string;
 };

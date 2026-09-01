@@ -9,6 +9,7 @@ import {
   LogOut,
   Music2,
   Pencil,
+  Phone,
   ShieldCheck,
   Trash2,
   Upload,
@@ -38,12 +39,18 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function isValidPhone(value: string) {
+  const digits = value.replace(/[^\d]/g, "");
+  return digits.length >= 8 && digits.length <= 15;
+}
+
 export default function AccountPage() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -55,6 +62,10 @@ export default function AccountPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameBusy, setNameBusy] = useState(false);
+
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
 
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -83,6 +94,7 @@ export default function AccountPage() {
     if (fetchError) return;
     setProfile(data as ProfileRow);
     setNameDraft((data as ProfileRow)?.display_name ?? "");
+    setPhoneDraft((data as ProfileRow)?.phone ?? "");
   }
 
   async function refreshUploads() {
@@ -119,11 +131,15 @@ export default function AccountPage() {
       setError("Please enter your name.");
       return;
     }
+    if (!isValidPhone(phone)) {
+      setError("Please enter a valid WhatsApp/mobile number.");
+      return;
+    }
     setAuthBusy(true);
     const { error: signUpError, data: signUpData } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: name.trim() } },
+      options: { data: { display_name: name.trim(), phone: phone.trim() } },
     });
     setAuthBusy(false);
     if (signUpError) {
@@ -159,6 +175,27 @@ export default function AccountPage() {
     await refreshProfile();
   }
 
+  async function savePhone() {
+    if (!session) return;
+    if (!isValidPhone(phoneDraft)) {
+      setError("Please enter a valid WhatsApp/mobile number.");
+      return;
+    }
+    setPhoneBusy(true);
+    setError(null);
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ phone: phoneDraft.trim() })
+      .eq("id", session.user.id);
+    setPhoneBusy(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    setMessage("Number saved.");
+    await refreshProfile();
+  }
+
   async function changePassword(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -186,6 +223,10 @@ export default function AccountPage() {
     setError(null);
     setMessage(null);
 
+    if (!profile?.phone) {
+      setError("Please add your WhatsApp/mobile number below before uploading.");
+      return;
+    }
     if (!file.type.startsWith("audio/")) {
       setError("Only audio files can be uploaded.");
       return;
@@ -316,12 +357,62 @@ export default function AccountPage() {
               </a>
             )}
 
+            {profile && !profile.phone ? (
+              <div className="account-phone-required">
+                <Phone size={16} />
+                <div>
+                  <b>Add your WhatsApp/mobile number</b>
+                  <small>Needed once, before you can upload audio to your account.</small>
+                  <div className="account-phone-required-row">
+                    <input
+                      type="tel"
+                      value={phoneDraft}
+                      onChange={(e) => setPhoneDraft(e.target.value)}
+                      placeholder="+92 3XX XXXXXXX"
+                    />
+                    <button type="button" disabled={phoneBusy} onClick={savePhone}>
+                      {phoneBusy ? "Saving…" : "Save"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : profile?.phone && !editingPhone ? (
+              <p className="account-phone-onfile">
+                <Phone size={13} /> {profile.phone}
+                <button type="button" onClick={() => setEditingPhone(true)} title="Edit number">
+                  <Pencil size={12} />
+                </button>
+              </p>
+            ) : profile?.phone && editingPhone ? (
+              <div className="account-phone-required-row account-phone-edit-row">
+                <input
+                  type="tel"
+                  value={phoneDraft}
+                  onChange={(e) => setPhoneDraft(e.target.value)}
+                  placeholder="+92 3XX XXXXXXX"
+                />
+                <button
+                  type="button"
+                  disabled={phoneBusy}
+                  onClick={async () => {
+                    await savePhone();
+                    setEditingPhone(false);
+                  }}
+                >
+                  {phoneBusy ? "Saving…" : "Save"}
+                </button>
+              </div>
+            ) : null}
+
             <div className="account-uploads">
               <div className="account-uploads-head">
                 <span>
                   <Music2 size={16} /> My audio ({uploads.length}/{MAX_USER_AUDIO_FILES})
                 </span>
-                <label className={`account-upload-btn${uploadBusy || uploads.length >= MAX_USER_AUDIO_FILES ? " disabled" : ""}`}>
+                <label
+                  className={`account-upload-btn${uploadBusy || uploads.length >= MAX_USER_AUDIO_FILES || !profile?.phone ? " disabled" : ""}`}
+                  title={!profile?.phone ? "Add your number above first" : undefined}
+                >
                   <Upload size={14} />
                   {uploadBusy ? "Uploading…" : "Upload"}
                   <input
@@ -329,7 +420,7 @@ export default function AccountPage() {
                     type="file"
                     accept="audio/*"
                     onChange={onPickFile}
-                    disabled={uploadBusy || uploads.length >= MAX_USER_AUDIO_FILES}
+                    disabled={uploadBusy || uploads.length >= MAX_USER_AUDIO_FILES || !profile?.phone}
                   />
                 </label>
               </div>
@@ -399,17 +490,32 @@ export default function AccountPage() {
 
             <form className="account-form" onSubmit={mode === "signin" ? signIn : signUp}>
               {mode === "signup" && (
-                <label>
-                  Name
-                  <input
-                    type="text"
-                    required
-                    maxLength={60}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Your name"
-                  />
-                </label>
+                <>
+                  <label>
+                    Name
+                    <input
+                      type="text"
+                      required
+                      maxLength={60}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Your name"
+                    />
+                  </label>
+                  <label>
+                    WhatsApp / mobile number
+                    <input
+                      type="tel"
+                      required
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+92 3XX XXXXXXX"
+                    />
+                  </label>
+                  <p className="account-phone-note">
+                    Needed to save your uploaded audio to your account and to reach you about it.
+                  </p>
+                </>
               )}
               <label>
                 Email
